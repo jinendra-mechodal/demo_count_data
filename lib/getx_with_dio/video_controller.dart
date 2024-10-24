@@ -3,7 +3,6 @@ import 'package:get/get.dart';
 import 'video_model.dart';
 import 'dio_service.dart';
 import 'package:video_player/video_player.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 class VideoController extends GetxController {
   var videos = <Video>[].obs;
@@ -11,23 +10,23 @@ class VideoController extends GetxController {
   var currentVideoIndex = 0.obs;
   late VideoPlayerController videoPlayerController;
   var dataUsage = 0.0.obs;
-  var dataSpeed = 0.0.obs;
   late Timer timer;
 
   final Map<String, int> videoQualities = {
-    'Low': 500,    // 500 kbps
-    'Medium': 1000, // 1000 kbps
-    'High': 2500,   // 2500 kbps
+    'Low': 250,    // 250 kbps
+    'Medium': 500, // 500 kbps
+    'High': 1000,  // 1000 kbps
   };
 
-  var currentBitrate = 100;
+  var currentBitrate = 250; // Start with low quality
   var currentQuality = 'Low'.obs;
+  var isLowDataMode = false.obs;
 
   @override
   void onInit() {
     super.onInit();
     fetchVideos();
-    startBandwidthMonitor();
+    startNetworkSpeedMonitor();
   }
 
   @override
@@ -64,7 +63,6 @@ class VideoController extends GetxController {
             if (videoPlayerController.value.hasError) {
               Get.snackbar('Error', 'Video playback error: ${videoPlayerController.value.errorDescription}');
             }
-            // Auto play next video when current ends
             if (videoPlayerController.value.position == videoPlayerController.value.duration) {
               playNextVideo();
             }
@@ -85,34 +83,35 @@ class VideoController extends GetxController {
     }
   }
 
-  void playPreviousVideo() {
-    if (currentVideoIndex.value > 0) {
-      setCurrentVideo(currentVideoIndex.value - 1);
-    }
-  }
-
-  void preloadVideo(Video video) {
-    VideoPlayerController.network(video.videoUrl)..initialize();
-  }
-
   void setCurrentVideo(int index) {
     if (index >= 0 && index < videos.length) {
       videoPlayerController.pause();
       videoPlayerController.dispose();
       currentVideoIndex.value = index;
-
-      // Adjust video quality based on current bandwidth
-      _adjustVideoQuality().then((_) {
-        playVideo(videos[currentVideoIndex.value]);
-      });
+      playVideo(videos[currentVideoIndex.value]);
     }
   }
 
   void changeVideoQuality(String quality) {
+    if (isLowDataMode.value && quality != 'Low') {
+      return; // Restrict to low quality in low data mode
+    }
+
     if (currentQuality.value != quality) {
       currentQuality.value = quality;
-      currentBitrate = videoQualities[quality] ?? 1000;
+      currentBitrate = videoQualities[quality] ?? 250; // Default to low if not found
       playVideo(videos[currentVideoIndex.value]);
+    }
+  }
+
+  void toggleLowDataMode() {
+    isLowDataMode.value = !isLowDataMode.value;
+    if (isLowDataMode.value) {
+      changeVideoQuality('Low'); // Automatically switch to low quality
+      Get.snackbar('Low Data Mode', 'You are now in Low Data Mode', snackPosition: SnackPosition.BOTTOM);
+    } else {
+      changeVideoQuality(currentQuality.value); // Switch back to previous quality
+      Get.snackbar('Low Data Mode', 'You are now in Normal Mode', snackPosition: SnackPosition.BOTTOM);
     }
   }
 
@@ -120,45 +119,33 @@ class VideoController extends GetxController {
     timer = Timer.periodic(Duration(seconds: 1), (Timer timer) {
       if (videoPlayerController.value.isPlaying) {
         _calculateDataUsage();
-        _calculateDataSpeed();
       }
     });
   }
 
   void _calculateDataUsage() {
-    double bitrateInMbps = currentBitrate / 8;
-    dataUsage.value += bitrateInMbps / 60; // Data usage per second
+    double bitrateInKbps = currentBitrate / 8; // Convert to KBps
+    dataUsage.value += bitrateInKbps / 60; // Data usage per second
+    print('Current Data Usage: ${dataUsage.value.toStringAsFixed(2)} MB');
   }
 
-  void _calculateDataSpeed() {
-    dataSpeed.value = currentBitrate / 1000.0; // Mbps
-  }
-
-  void startBandwidthMonitor() {
-    Timer.periodic(Duration(seconds: 5), (timer) async {
+  void startNetworkSpeedMonitor() {
+    Timer.periodic(Duration(seconds: 5), (Timer timer) async {
       double speed = await _checkInternetSpeed();
-      if (speed < 0.5) {
-        changeVideoQuality('Low');
-      } else if (speed < 1.0) {
-        changeVideoQuality('Medium');
-      } else {
-        changeVideoQuality('High');
-      }
+      print('Current Network Speed: ${speed.toStringAsFixed(2)} Mbps');
+      _adjustVideoQualityBasedOnSpeed(speed);
     });
   }
 
   Future<double> _checkInternetSpeed() async {
-    // Implement a simple speed test logic here
-    // For example, you can download a small file and measure the time taken.
-    return 1.0; // Placeholder for actual speed in Mbps
+    // Simulate network speed checking (replace with actual logic)
+    return 0.5; // Placeholder for actual speed test logic
   }
 
-  Future<void> _adjustVideoQuality() async {
-    double speed = await _checkInternetSpeed();
-
-    if (speed < 0.5) {
+  void _adjustVideoQualityBasedOnSpeed(double speed) {
+    if (speed < 0.1) {
       changeVideoQuality('Low');
-    } else if (speed < 1.0) {
+    } else if (speed < 0.5) {
       changeVideoQuality('Medium');
     } else {
       changeVideoQuality('High');

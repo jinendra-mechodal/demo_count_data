@@ -1,19 +1,20 @@
-// main.dart
+// lib/main.dart
+import 'package:demo_count_data/provider/main_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
-import 'getx/video_player_screen.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(VideoPlayerApp());
 }
 
-class MyApp extends StatelessWidget {
+class VideoPlayerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Video Player',
-      home: VideoPlayerScreen(),
+      title: 'Video Player App',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: MainScreen(),
     );
   }
 }
