@@ -20,6 +20,38 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// class VideoPlayerScreen extends ConsumerWidget {
+//   @override
+//   Widget build(BuildContext context, WidgetRef ref) {
+//     final videoState = ref.watch(videoProvider);
+//
+//     return Scaffold(
+//       body: videoState.isLoading
+//           ? Center(child: CircularProgressIndicator())
+//           : videoState.videos.isEmpty
+//               ? Center(child: Text('No videos found'))
+//               : PageView.builder(
+//                   controller: videoState.pageController,
+//                   itemCount: videoState.videos.length,
+//                   itemBuilder: (context, index) {
+//                     return VideoPlayerItem(
+//                       video: videoState.videos[index],
+//                       onVideoFinished: () {
+//                         if (index < videoState.videos.length - 1) {
+//                           videoState.pageController.nextPage(
+//                             duration: Duration(milliseconds: 300),
+//                             curve: Curves.easeInOut,
+//                           );
+//                         }
+//                       },
+//                     );
+//                   },
+//                   scrollDirection: Axis.vertical,
+//                 ),
+//     );
+//   }
+// }
+
 class VideoPlayerScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,7 +59,7 @@ class VideoPlayerScreen extends ConsumerWidget {
 
     return Scaffold(
       body: videoState.isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? Center(child: _buildLoadingAnimation())
           : videoState.videos.isEmpty
           ? Center(child: Text('No videos found'))
           : PageView.builder(
@@ -47,6 +79,22 @@ class VideoPlayerScreen extends ConsumerWidget {
           );
         },
         scrollDirection: Axis.vertical,
+      ),
+    );
+  }
+
+  Widget _buildLoadingAnimation() {
+    return Container(
+      color: Colors.white,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 20),
+            Text('Loading videos...', style: TextStyle(fontSize: 18)),
+          ],
+        ),
       ),
     );
   }
@@ -84,7 +132,9 @@ class _VideoPlayerItemState extends ConsumerState<VideoPlayerItem> {
         widget.onVideoFinished();
       } else {
         // Update playback time and data usage
-        ref.read(videoProvider.notifier).updatePlaybackData(_controller.value.position.inSeconds);
+        ref
+            .read(videoProvider.notifier)
+            .updatePlaybackData(_controller.value.position.inSeconds);
       }
     });
   }
@@ -231,7 +281,8 @@ class VideoProvider extends StateNotifier<VideoState> {
   void loadVideos() async {
     state = state.copyWith(isLoading: true);
     try {
-      final response = await http.get(Uri.parse('https://liveb2b.in/liveb2b3.0/all-video-api.php'));
+      final response = await http
+          .get(Uri.parse('https://liveb2b.in/liveb2b3.0/all-video-api.php'));
       if (response.statusCode == 200) {
         var jsonData = json.decode(response.body);
         if (jsonData['status'] == 'success') {
@@ -243,7 +294,8 @@ class VideoProvider extends StateNotifier<VideoState> {
           print('Error: ${jsonData['message']}');
         }
       } else {
-        throw Exception('Failed to load videos. Status code: ${response.statusCode}');
+        throw Exception(
+            'Failed to load videos. Status code: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching videos: $e');
