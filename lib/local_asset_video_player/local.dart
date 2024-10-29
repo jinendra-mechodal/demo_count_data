@@ -1,164 +1,173 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
-import 'dart:async'; // Import for Timer
-import 'video_data.dart'; // Import the video data
+import 'package:dio/dio.dart';
 
 void main() {
-  Get.put(DataUsageController());
-  runApp(MyApp());
+  runApp(MaterialApp(
+    home: VideoSwipePageView(),
+  ));
 }
 
-// Data Usage Controller
-class DataUsageController extends GetxController {
-  var currentUsage = 0.0.obs;
+class Video {
+  final String videoUrl;
+  final String title;
 
-  void updateUsage(double amount) {
-    currentUsage.value += amount;
-    print("Updated data usage: ${currentUsage.value}");
-  }
-}
+  Video({required this.videoUrl, required this.title});
 
-class MyApp extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GetMaterialApp(
-      title: 'Video Player',
-      home: VideoPlayerScreen(),
+  factory Video.fromJson(Map<String, dynamic> json) {
+    return Video(
+      videoUrl: json['video'],
+      title: json['video_tital'],
     );
   }
 }
 
-// Video Player Screen
-class VideoPlayerScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Video Player'),
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: PageView.builder(
-              itemCount: videos.length,
-              itemBuilder: (context, index) {
-                return VideoPlayerItem(video: videos[index]);
-              },
-              scrollDirection: Axis.vertical,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Obx(() {
-              final dataUsage = Get.find<DataUsageController>().currentUsage.value;
-              return Text(
-                'Data Used: ${dataUsage.toStringAsFixed(2)} MB',
-                style: TextStyle(fontSize: 18),
-              );
-            }),
-          ),
-        ],
-      ),
-    );
+Future<List<Video>> fetchVideos() async {
+  print("Fetching videos from API...");
+  final response = await http.get(Uri.parse('https://liveb2b.in/liveb2b3.0/all-video-api.php'));
+
+  if (response.statusCode == 200) {
+    final data = json.decode(response.body);
+    if (data['status'] == 'success') {
+      print("Videos fetched successfully.");
+      return (data['video'] as List).map((videoData) => Video.fromJson(videoData)).toList();
+    } else {
+      print("Failed to find video data.");
+      throw Exception('Failed to load videos');
+    }
+  } else {
+    print("API request failed with status: ${response.statusCode}");
+    throw Exception('Failed to load videos');
   }
 }
 
-// Video Player Item
-class VideoPlayerItem extends StatefulWidget {
-  final Map<String, dynamic> video;
-
-  VideoPlayerItem({required this.video});
-
-  @override
-  _VideoPlayerItemState createState() => _VideoPlayerItemState();
+Future<String> downloadVideo(String url, String title) async {
+  try {
+    print("Downloading video: $title...");
+    var response = await Dio().get(url, options: Options(responseType: ResponseType.bytes));
+    var dir = await getTemporaryDirectory();
+    File file = File('${dir.path}/${title.replaceAll(' ', '_')}.m3u8');
+    await file.writeAsBytes(response.data);
+    print("Downloaded video: $title to ${file.path}");
+    return file.path;
+  } catch (e) {
+    print("Error downloading video: $e");
+    throw e; // Rethrow the error after logging it
+  }
 }
 
-class _VideoPlayerItemState extends State<VideoPlayerItem> {
+class VideoPlayerScreen extends StatefulWidget {
+  final String videoPath;
+
+  VideoPlayerScreen({required this.videoPath});
+
+  @override
+  _VideoPlayerScreenState createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late VideoPlayerController _controller;
-  Timer? _dataUsageTimer;
 
   @override
   void initState() {
     super.initState();
-    _initializeVideoPlayer();
-  }
-
-  void _initializeVideoPlayer() {
-    _controller = VideoPlayerController.network(widget.video["sources"][0])
+    _controller = VideoPlayerController.file(File(widget.videoPath))
       ..initialize().then((_) {
-        setState(() {
-          _controller.play();
-          Get.find<DataUsageController>().updateUsage(1.0); // Lower initial data usage
-          _startDataUsageTimer();
-        });
-      }).catchError((error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading video: ${error.toString()}')),
-        );
+        setState(() {});
+        _controller.play();
       });
-  }
-
-  void _startDataUsageTimer() {
-    _dataUsageTimer = Timer.periodic(Duration(seconds: 1), (timer) {
-      if (_controller.value.isPlaying) {
-        Get.find<DataUsageController>().updateUsage(0.2); // Lower data usage every second
-      }
-    });
   }
 
   @override
   void dispose() {
-    _dataUsageTimer?.cancel(); // Cancel the timer
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        _controller.value.isInitialized
-            ? VideoPlayer(_controller)
-            : Center(child: CircularProgressIndicator()),
-        Positioned(
-          bottom: 50,
-          left: 20,
-          right: 20,
-          child: Container(
-            padding: EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              widget.video["title"],
-              style: TextStyle(color: Colors.white, fontSize: 20),
-            ),
-          ),
-        ),
-        Positioned(
-          bottom: 120,
-          left: MediaQuery.of(context).size.width / 2 - 30,
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                if (_controller.value.isPlaying) {
-                  _controller.pause();
-                } else {
-                  _controller.play();
-                }
-              });
-            },
-            child: Icon(
-              _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-              color: Colors.white,
-              size: 60,
-            ),
-          ),
-        ),
-      ],
+    return Scaffold(
+      body: Center(
+        child: _controller.value.isInitialized
+            ? AspectRatio(
+          aspectRatio: _controller.value.aspectRatio,
+          child: VideoPlayer(_controller),
+        )
+            : CircularProgressIndicator(),
+      ),
+    );
+  }
+}
+
+class VideoSwipePageView extends StatefulWidget {
+  @override
+  _VideoSwipePageViewState createState() => _VideoSwipePageViewState();
+}
+
+class _VideoSwipePageViewState extends State<VideoSwipePageView> {
+  late Future<List<Video>> _videosFuture;
+  List<String> videoPaths = [];
+  bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _videosFuture = fetchVideos();
+  }
+
+  Future<void> _downloadVideos(List<Video> videos) async {
+    setState(() {
+      isLoading = true;
+    });
+
+    for (var video in videos) {
+      try {
+        String path = await downloadVideo(video.videoUrl, video.title);
+        videoPaths.add(path);
+      } catch (e) {
+        print("Failed to download video: ${video.title}. Error: $e");
+      }
+    }
+
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Video>>(
+      future: _videosFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          print("Error loading videos: ${snapshot.error}");
+          return Center(child: Text('Error: ${snapshot.error}'));
+        } else {
+          if (videoPaths.isEmpty && !isLoading) {
+            _downloadVideos(snapshot.data!);
+          }
+
+          return Stack(
+            children: [
+              if (videoPaths.isNotEmpty)
+                PageView.builder(
+                  itemCount: videoPaths.length,
+                  itemBuilder: (context, index) {
+                    return VideoPlayerScreen(videoPath: videoPaths[index]);
+                  },
+                ),
+              if (isLoading)
+                Center(child: CircularProgressIndicator()),
+            ],
+          );
+        }
+      },
     );
   }
 }
